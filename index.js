@@ -102,6 +102,120 @@ app.post('/addexpense', async (req, res) => {
     }
 });
 
+app.get('/expenses', async (req, res) => {
+    const { authorization } = req.headers;
+    const { startDate, endDate, filterBy } = req.query;
+    if(authorization && authorization.startsWith('Bearer ')){
+        const token = authorization.split(' ')[1];
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            if (!decoded) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+            const email = decoded.email;
+            if (!email) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+            
+            const user = await sql`SELECT * FROM users WHERE email = ${email}`;
+            const userid = user[0].id
+            let params = [userid];
+            let filterString = '';
+            if (filterBy === 'past_week') {
+                    filterString = ' AND expense_date >= CURRENT_DATE - INTERVAL \'1 week\'';
+                } else if (filterBy === 'past_month') {
+                    filterString = ' AND expense_date >= CURRENT_DATE - INTERVAL \'1 month\'';
+                } else if (filterBy === 'last_3_months') {
+                    filterString = ' AND expense_date >= CURRENT_DATE - INTERVAL \'3 months\'';
+                } else if (startDate && endDate) {
+                    filterString = ` AND expense_date BETWEEN $2 AND $3`;
+                    params.push(startDate, endDate);
+                }
+                let query = `SELECT * FROM expenses WHERE user_id = $1 ${filterString} ORDER BY id DESC`;
+
+                const expenses = await sql.unsafe(query,params);
+                res.status(200).json(expenses);
+            
+        } catch (err) {
+            return res.status(404).json(err);
+        }
+    } else {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+});
+
+
+app.put('/expense/:id', async (req, res) => {
+    const { authorization } = req.headers;
+    const { id } = req.params;
+    const { amount, category, description } = req.body;
+
+   if(authorization && authorization.startsWith('Bearer ')){
+       const token = authorization.split(' ')[1];
+       try {
+           const decoded = jwt.verify(token, JWT_SECRET);
+           if (!decoded) {
+               return res.status(401).json({ error: 'Unauthorized' });
+           }
+           const email = decoded.email;
+           if (!email) {
+               return res.status(401).json({ error: 'Unauthorized' });
+           }
+           
+           const user = await sql`SELECT * FROM users WHERE email = ${email}`;
+           const userid = user[0].id;
+            if (!amount || !category || !description) {   
+                return res.status(400).json({ error: 'Missing Details' });
+            }
+            const expense = await sql`SELECT * FROM expenses WHERE id = ${id} AND user_id = ${userid}`;
+            if (expense.length === 0) {
+                return res.status(404).json({ error: 'Expense not found' });
+            }
+                await sql`UPDATE expenses SET amount = ${amount}, category = ${category}, description = ${description} WHERE id = ${id} AND user_id = ${userid}`;
+                res.status(200).json("Expense updated successfully");
+             
+           } catch (err) {
+           return res.status(401).json(err);
+       }
+   } else {
+       return res.status(401).json({ error: 'Unauthorized' });
+   }
+    
+});
+
+app.delete('/expense/:id', async (req, res) => {
+    const { authorization } = req.headers;
+    const { id } = req.params;
+
+   if(authorization && authorization.startsWith('Bearer ')){
+       const token = authorization.split(' ')[1];
+       try {
+           const decoded = jwt.verify(token, JWT_SECRET);
+           if (!decoded) {
+               return res.status(401).json({ error: 'Unauthorized' });
+           }
+           const email = decoded.email;
+           if (!email) {
+               return res.status(401).json({ error: 'Unauthorized' });
+           }
+           
+           const user = await sql`SELECT * FROM users WHERE email = ${email}`;
+           const userid = user[0].id;
+            const expense = await sql`SELECT * FROM expenses WHERE id = ${id} AND user_id = ${userid}`;
+            if (expense.length === 0) {
+                return res.status(404).json({ error: 'Expense not found' });
+            }
+                await sql`DELETE FROM expenses WHERE id = ${id} AND user_id = ${userid}`;
+                res.status(200).json("Expense deleted successfully");
+             
+           } catch (err) {
+           return res.status(401).json(err);
+       }
+   } else {
+       return res.status(401).json({ error: 'Unauthorized' });
+   }
+});
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });     
